@@ -26,7 +26,9 @@ jobs:
 
       - name: Install WiX v5
         shell: pwsh
-        run: dotnet tool install --global wix
+        # Pin to v5: WiX v6/v7 require accepting the paid OSMF EULA (error WIX7015).
+        # v5 is plain MIT (no fee) and matches this project's v4/v5 authoring.
+        run: dotnet tool install --global wix --version 5.0.2
 
       # Builds the app: installs engines, downloads Docling models (~1.2 GB),
       # draws the icon, and runs PyInstaller -> app\dist\Markdownify\

@@ -1,0 +1,71 @@
+name: Build Windows installer
+
+# Run manually from the Actions tab, or automatically on push.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Put dotnet global tools on PATH
+        shell: pwsh
+        run: echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Install WiX v5
+        shell: pwsh
+        run: dotnet tool install --global wix
+
+      # Builds the app: installs engines, downloads Docling models (~1.2 GB),
+      # draws the icon, and runs PyInstaller -> app\dist\Markdownify\
+      - name: Build the app (PyInstaller)
+        shell: cmd
+        working-directory: app
+        run: build_windows.bat
+
+      - name: Build the MSI (WiX)
+        id: msi
+        continue-on-error: true
+        shell: cmd
+        working-directory: windows-msi
+        run: wix build Markdownify.wxs -o Markdownify.msi
+
+      - name: Sign the MSI (free self-signed, optional)
+        continue-on-error: true
+        shell: pwsh
+        working-directory: windows-msi
+        run: powershell -ExecutionPolicy Bypass -File sign_windows.ps1 -File Markdownify.msi
+
+      # Fallback: a runnable zip of the app folder, always produced, so the team
+      # can test even if the MSI step needs a fix on the first run.
+      - name: Zip the runnable app folder
+        shell: pwsh
+        run: Compress-Archive -Path app\dist\Markdownify\* -DestinationPath Markdownify-windows-app.zip -Force
+
+      - name: Upload MSI
+        if: steps.msi.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Markdownify-Windows-MSI
+          path: |
+            windows-msi/Markdownify.msi
+            windows-msi/1FD-CodeSigning-Public.cer
+          if-no-files-found: warn
+
+      - name: Upload runnable app (zip fallback)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Markdownify-Windows-app-zip
+          path: Markdownify-windows-app.zip

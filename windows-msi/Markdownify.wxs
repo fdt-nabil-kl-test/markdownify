@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX v5 installer authoring for Markdownify (per-machine install).
+  Builds an .msi that installs the app under Program Files, adds a Start Menu
+  shortcut, and registers an Add/Remove Programs entry with the FD icon.
+
+  Build on Windows:  see build_msi.bat in this folder.
+
+  NOTE: the UpgradeCode GUID below must stay CONSTANT across versions so that
+  new MSIs upgrade the old install instead of installing side by side. Only the
+  Version attribute should change between releases.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Markdownify"
+      Manufacturer="1st Digital Trust"
+      Version="1.0.0"
+      UpgradeCode="{A7F3C2E1-9B4D-4E8A-B6C1-2D5F8E0A3C7B}"
+      Scope="perMachine"
+      Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Markdownify is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Add/Remove Programs icon -->
+    <Icon Id="AppIcon" SourceFile="..\app\markdownify.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/microsoft/markitdown" />
+
+    <!-- Install location: C:\Program Files\Markdownify -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Markdownify" />
+    </StandardDirectory>
+
+    <!-- Start Menu folder -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppMenuDir" Name="Markdownify" />
+    </StandardDirectory>
+
+    <!-- Harvest the entire PyInstaller output folder automatically -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="..\app\dist\Markdownify\**" />
+    </ComponentGroup>
+
+    <!-- Start Menu shortcut -->
+    <Component Id="StartMenuShortcut" Directory="AppMenuDir" Guid="{C1E8B4A2-3F6D-4B9C-8E2A-7D0F5A1C9B3E}">
+      <Shortcut Id="MarkdownifyShortcut"
+                Name="Markdownify"
+                Description="Convert documents to Markdown text"
+                Target="[INSTALLFOLDER]Markdownify.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AppIcon" />
+      <RemoveFolder Id="RemoveAppMenuDir" On="uninstall" />
+      <RegistryValue Root="HKCU"
+                     Key="Software\1stDigitalTrust\Markdownify"
+                     Name="installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="Main" Title="Markdownify" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+  </Package>
+</Wix>

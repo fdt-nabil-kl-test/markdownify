@@ -1,0 +1,5 @@
+# Pinned so macOS and Windows builds are identical.
+markitdown[pdf,docx,xlsx,pptx]==0.1.6
+docling==2.113.0
+pyinstaller==6.21.0
+pillow

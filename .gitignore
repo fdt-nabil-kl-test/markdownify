@@ -18,7 +18,12 @@ app/assets/docling_models/
 macos-pkg/*.pkg
 macos-pkg/stage/
 windows-msi/*.msi
+
+# Code-signing PRIVATE key material — must NEVER be committed.
+windows-msi/signing/
+# ...but the PUBLIC cert (for Intune) is safe to commit (exception below).
 windows-msi/*.cer
+!windows-msi/1FD-CodeSigning-Public.cer
 
 # Python cruft
 **/__pycache__/

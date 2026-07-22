@@ -44,10 +44,13 @@ jobs:
         working-directory: windows-msi
         run: wix build Markdownify.wxs -o Markdownify.msi
 
-      - name: Sign the MSI (free self-signed, optional)
+      - name: Sign the MSI (company cert from secrets)
         continue-on-error: true
         shell: pwsh
         working-directory: windows-msi
+        env:
+          CODESIGN_PFX_BASE64: ${{ secrets.CODESIGN_PFX_BASE64 }}
+          CODESIGN_PFX_PASSWORD: ${{ secrets.CODESIGN_PFX_PASSWORD }}
         run: powershell -ExecutionPolicy Bypass -File sign_windows.ps1 -File Markdownify.msi
 
       # Fallback: a runnable zip of the app folder, always produced, so the team

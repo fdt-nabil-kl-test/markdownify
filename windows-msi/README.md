@@ -40,24 +40,28 @@ msiexec /x Markdownify.msi          REM uninstall
 
 ## Signing — free, for internal use
 
-`build_msi.bat` automatically runs `sign_windows.ps1`, which:
+A single, **stable self-signed code-signing certificate** (`CN=1st Digital Trust`)
+signs every build, so its identity never changes across versions. In CI,
+`sign_windows.ps1` signs the MSI using the certificate supplied via two GitHub
+**repository secrets**:
 
-1. creates a **self-signed** code-signing certificate (first run only, reused after),
-2. exports its **public** cert as `1FD-CodeSigning-Public.cer`,
-3. signs `Markdownify.msi` with a trusted timestamp.
+| Secret | Value |
+| --- | --- |
+| `CODESIGN_PFX_BASE64` | base64 of the `.pfx` (private key + cert) |
+| `CODESIGN_PFX_PASSWORD` | the `.pfx` password |
 
-No paid certificate authority needed. Because you control the fleet, you make
-your own signature trusted by deploying that public `.cer` to your managed
-machines (next section).
+The public half — `1FD-CodeSigning-Public.cer` (committed here) — is what you
+deploy to your fleet via Intune so managed machines trust the signature.
 
-To sign manually / re-sign:
-```
-powershell -ExecutionPolicy Bypass -File sign_windows.ps1 -File Markdownify.msi
-```
+**Where the private material lives:** `windows-msi/signing/` (git-ignored — never
+committed). It contains the `.pfx`, its base64, and the password. Keep this
+folder safe; anyone with it can sign software your fleet trusts. Back it up
+securely (e.g. Bitwarden / a controlled vault), and have Thevan (IT Risk) /
+Martini sign off on holding it.
 
-> Security note: the private key sits in the signing user's certificate store.
-> Anyone with it can sign software your fleet trusts — protect that account.
-> Get Thevan (IT Risk) / Martini to sign off before deploying the cert fleet-wide.
+> No paid certificate authority needed. This works ONLY on machines where the
+> public cert is installed (your managed fleet). It will NOT remove the warning
+> on unmanaged / external PCs — that requires a paid publicly-trusted cert.
 
 ## Deploying via Intune (Martini)
 

@@ -52,18 +52,25 @@ def write_md(text, src_path):
 # ---------- Engine loaders (lazy: imported only when a tab is first used) ----------
 
 def load_quick():
-    """MarkItDown engine -> returns a convert(path) -> markdown-text function."""
+    """MarkItDown engine -> returns a convert(path, include_images) function.
+
+    include_images=True embeds the document's images directly into the Markdown
+    (as data URIs) so the .md is self-contained. False = clean text, no images."""
     from markitdown import MarkItDown
     md = MarkItDown()
-    return lambda path: (md.convert(path).text_content or "")
+
+    def convert(path, include_images=True):
+        return md.convert(path, keep_data_uris=include_images).text_content or ""
+
+    return convert
 
 
 def load_deep():
-    """Docling engine -> returns a convert(path) -> markdown-text function.
+    """Docling engine -> returns a convert(path, include_images) function.
 
     Uses the models bundled inside the app and runs fully offline (no network),
-    so it works on locked-down machines. Falls back to default behaviour if the
-    bundled models aren't present (e.g. running from source without them)."""
+    so it works on locked-down machines. include_images=True embeds figures/
+    screenshots into the Markdown; False leaves placeholders."""
     models_dir = resource_path(os.path.join("assets", "docling_models"))
     if os.path.isdir(models_dir):
         # force offline so Docling never reaches out to Hugging Face
@@ -73,13 +80,19 @@ def load_deep():
     from docling.document_converter import DocumentConverter, PdfFormatOption
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling_core.types.doc import ImageRefMode
 
+    opts = PdfPipelineOptions(generate_picture_images=True)  # so images can be embedded
     if os.path.isdir(models_dir):
-        opts = PdfPipelineOptions(artifacts_path=models_dir)
-        dc = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
-    else:
-        dc = DocumentConverter()
-    return lambda path: dc.convert(path).document.export_to_markdown()
+        opts.artifacts_path = models_dir
+    dc = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+
+    def convert(path, include_images=True):
+        doc = dc.convert(path).document
+        mode = ImageRefMode.EMBEDDED if include_images else ImageRefMode.PLACEHOLDER
+        return doc.export_to_markdown(image_mode=mode)
+
+    return convert
 
 
 class SegmentedControl(tk.Canvas):
@@ -147,6 +160,14 @@ class ConverterPanel(tk.Frame):
         self.btn.bind("<Button-1>", lambda e: self.pick_files())
         self.btn.bind("<Enter>", lambda e: not self._busy and self.btn.configure(bg=ACCENT_HOVER))
         self.btn.bind("<Leave>", lambda e: not self._busy and self.btn.configure(bg=ACCENT))
+
+        self.include_images = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            self, text="Include images in the .md (self-contained, larger file)",
+            variable=self.include_images, bg=BG, fg=SUBFG, selectcolor=LOG_BG,
+            activebackground=BG, activeforeground=FG, highlightthickness=0, bd=0,
+            cursor="hand2",
+        ).pack(anchor="w", padx=16, pady=(10, 0))
 
         self.status = tk.Label(self, text="Ready.", bg=BG, fg=SUBFG)
         self.status.pack(anchor="w", padx=16, pady=(10, 0))
@@ -235,10 +256,11 @@ class ConverterPanel(tk.Frame):
             return
 
         self._post("pmode", "determinate", len(paths))
+        include_images = self.include_images.get()
         ok = 0
         for i, p in enumerate(paths):
             try:
-                text = self._convert(p)
+                text = self._convert(p, include_images)
                 out, chars = write_md(text, p)
                 ok += 1
                 self._log(f"OK   {os.path.basename(p)}  ->  {os.path.basename(out)}  ({chars:,} chars)")

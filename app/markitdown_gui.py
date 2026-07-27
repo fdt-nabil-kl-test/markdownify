@@ -59,7 +59,7 @@ def load_quick():
     from markitdown import MarkItDown
     md = MarkItDown()
 
-    def convert(path, include_images=True):
+    def convert(path, include_images=True, force_ocr=False):  # force_ocr N/A for Quick
         return md.convert(path, keep_data_uris=include_images).text_content or ""
 
     return convert
@@ -79,16 +79,27 @@ def load_deep():
 
     from docling.document_converter import DocumentConverter, PdfFormatOption
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
     from docling_core.types.doc import ImageRefMode
 
-    opts = PdfPipelineOptions(generate_picture_images=True)  # so images can be embedded
-    if os.path.isdir(models_dir):
-        opts.artifacts_path = models_dir
-    dc = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+    converters = {}  # cached per force_ocr setting (building one is slow)
 
-    def convert(path, include_images=True):
-        doc = dc.convert(path).document
+    def get_converter(force_ocr):
+        if force_ocr not in converters:
+            opts = PdfPipelineOptions(generate_picture_images=True)  # so images can be embedded
+            if os.path.isdir(models_dir):
+                opts.artifacts_path = models_dir
+            if force_ocr:
+                # Re-OCR the rendered page instead of trusting the PDF's text layer.
+                # Fixes garbled/broken text-layer PDFs and reads scanned pages.
+                opts.do_ocr = True
+                opts.ocr_options = RapidOcrOptions(force_full_page_ocr=True)
+            converters[force_ocr] = DocumentConverter(
+                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+        return converters[force_ocr]
+
+    def convert(path, include_images=True, force_ocr=False):
+        doc = get_converter(force_ocr).convert(path).document
         mode = ImageRefMode.EMBEDDED if include_images else ImageRefMode.PLACEHOLDER
         return doc.export_to_markdown(image_mode=mode)
 
@@ -143,13 +154,14 @@ class ConverterPanel(tk.Frame):
     `loader` is a zero-arg callable returning a convert(path)->text function.
     It is called lazily on first use (engines are slow to import)."""
 
-    def __init__(self, master, blurb, loader, load_msg):
+    def __init__(self, master, blurb, loader, load_msg, force_ocr_option=False):
         super().__init__(master, bg=BG)
         self._loader = loader
         self._load_msg = load_msg
         self._convert = None
         self._busy = False
         self._q = queue.Queue()
+        self._force_ocr_option = force_ocr_option
 
         tk.Label(self, text=blurb, bg=BG, fg=SUBFG, justify="left",
                  wraplength=580).pack(anchor="w", padx=16, pady=(14, 8))
@@ -168,6 +180,15 @@ class ConverterPanel(tk.Frame):
             activebackground=BG, activeforeground=FG, highlightthickness=0, bd=0,
             cursor="hand2",
         ).pack(anchor="w", padx=16, pady=(10, 0))
+
+        self.force_ocr = tk.BooleanVar(value=False)
+        if self._force_ocr_option:
+            tk.Checkbutton(
+                self, text="Force OCR (for scanned or garbled PDFs — slower)",
+                variable=self.force_ocr, bg=BG, fg=SUBFG, selectcolor=LOG_BG,
+                activebackground=BG, activeforeground=FG, highlightthickness=0, bd=0,
+                cursor="hand2",
+            ).pack(anchor="w", padx=16, pady=(4, 0))
 
         self.status = tk.Label(self, text="Ready.", bg=BG, fg=SUBFG)
         self.status.pack(anchor="w", padx=16, pady=(10, 0))
@@ -257,10 +278,11 @@ class ConverterPanel(tk.Frame):
 
         self._post("pmode", "determinate", len(paths))
         include_images = self.include_images.get()
+        force_ocr = self.force_ocr.get()
         ok = 0
         for i, p in enumerate(paths):
             try:
-                text = self._convert(p, include_images)
+                text = self._convert(p, include_images, force_ocr)
                 out, chars = write_md(text, p)
                 ok += 1
                 self._log(f"OK   {os.path.basename(p)}  ->  {os.path.basename(out)}  ({chars:,} chars)")
@@ -321,6 +343,7 @@ class App(tk.Tk):
             "Quick gives poor results. Runs fully offline.",
             load_deep,
             "Loading Deep engine (Docling) — offline…",
+            force_ocr_option=True,
         )
         self.quick.grid(row=0, column=0, sticky="nsew")
         self.deep.grid(row=0, column=0, sticky="nsew")

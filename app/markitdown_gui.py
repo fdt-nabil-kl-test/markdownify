@@ -9,6 +9,7 @@ Each converted file is written as <name>.md next to the original.
 Packaged into a macOS .app and a Windows .exe.
 """
 
+import multiprocessing
 import os
 import queue
 import sys
@@ -363,6 +364,11 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
+    # MUST be the first call. In a frozen app, worker processes started by the
+    # Deep engine's libraries re-execute this file; without freeze_support()
+    # each one would build another GUI window (and spawn more children).
+    multiprocessing.freeze_support()
+
     # Headless self-tests (verify the frozen app), no GUI:
     #   --selftest <file>       uses the Quick engine (MarkItDown)
     #   --selftest-deep <file>  uses the Deep engine (Docling, offline)

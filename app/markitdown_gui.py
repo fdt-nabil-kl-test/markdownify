@@ -15,7 +15,7 @@ import queue
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 APP_TITLE = "Markdownify"
 
@@ -43,11 +43,118 @@ SUPPORTED = [
 ]
 
 
+def unique_md_path(src_path):
+    """Pick an output path that never overwrites the input or an existing file.
+    report.pdf -> report.md, then report (2).md, report (3).md, …"""
+    stem = os.path.splitext(src_path)[0]
+    candidate = stem + ".md"
+    n = 2
+    while os.path.exists(candidate) or os.path.abspath(candidate) == os.path.abspath(src_path):
+        candidate = f"{stem} ({n}).md"
+        n += 1
+    return candidate
+
+
 def write_md(text, src_path):
-    out_path = os.path.splitext(src_path)[0] + ".md"
+    out_path = unique_md_path(src_path)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(text or "")
     return out_path, len(text or "")
+
+
+OFFICE_EXT = {".docx", ".xlsx", ".xls", ".pptx"}
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp"}
+
+
+def pdf_text_health(path, probe_pages=8):
+    """Cheap probe of a PDF's text layer. Returns 'scanned', 'garbled' or 'ok'.
+
+    Reads the first few pages only — corruption often starts partway in, but
+    reading the whole file would be slow for large documents."""
+    try:
+        from pdfminer.high_level import extract_text
+        txt = extract_text(path, maxpages=probe_pages) or ""
+    except Exception:  # noqa: BLE001 - probe is best-effort only
+        return "ok"
+    if len(txt.strip()) < 100:
+        return "scanned"          # little/no text layer -> needs OCR
+    if _looks_garbled(txt):
+        return "garbled"
+    return "ok"
+
+
+# Common words containing an ff/fi/fl ligature. A PDF with a broken ligature
+# mapping turns these into things like "diUerent" or "oUice".
+_LIGATURE_WORDS = {
+    "different", "difficult", "difficulty", "office", "offer", "offered", "staff",
+    "effect", "effective", "efficient", "office", "official", "offboarding",
+    "first", "fill", "filled", "final", "finally", "file", "filed", "files",
+    "confirm", "confirmation", "notification", "notifications", "specific",
+    "affect", "affected", "off", "offline", "profile", "benefit", "benefits",
+    "identify", "identified", "certificate", "certification", "sufficient",
+}
+
+
+def _looks_garbled(txt):
+    """True if the text shows the broken-ligature signature.
+
+    Requires that swapping the odd character for an f-ligature yields a real
+    word — so genuine CamelCase names (BitLocker, MediaTek, PalmRest) are not
+    mistaken for corruption."""
+    import re
+    hits = 0
+    for word in re.findall(r"[A-Za-z]*[a-z]{2}[A-Z0-9][a-z]{2}[A-Za-z]*", txt):
+        m = re.search(r"[a-z]{2}([A-Z0-9])[a-z]{2}", word)
+        if not m:
+            continue
+        odd = m.group(1)
+        for lig in ("ff", "fi", "fl", "ffi"):
+            if word.replace(odd, lig, 1).lower() in _LIGATURE_WORDS:
+                hits += 1
+                break
+        if hits >= 1:   # dictionary check makes a single hit reliable
+            return True
+    return False
+
+
+def suggest_engine(paths, current_is_deep, force_ocr_on):
+    """Recommend the better engine/settings for the chosen files.
+
+    Returns (target_is_deep, want_force_ocr, message) or None if the current
+    selection is already the sensible choice."""
+    exts = [os.path.splitext(p)[1].lower() for p in paths]
+
+    if all(e in OFFICE_EXT for e in exts) and current_is_deep:
+        return (False, False,
+                "These look like Office documents (Word/Excel/PowerPoint).\n\n"
+                "Quick reads their text directly — it's faster and more accurate, "
+                "and it keeps images.\n\nSwitch to Quick?")
+
+    if all(e in IMAGE_EXT for e in exts) and not current_is_deep:
+        return (True, False,
+                "These are image files.\n\n"
+                "Quick cannot read text from images — it would produce an empty file. "
+                "Deep uses OCR to read them.\n\nSwitch to Deep?")
+
+    pdfs = [p for p, e in zip(paths, exts) if e == ".pdf"]
+    if pdfs and len(pdfs) <= 5:
+        health = [pdf_text_health(p) for p in pdfs]
+        if any(h in ("scanned", "garbled") for h in health):
+            why = ("This PDF looks scanned — it has no readable text layer."
+                   if "scanned" in health else
+                   "This PDF's text layer looks corrupted — some words would come "
+                   "out garbled (e.g. “diUerent” instead of “different”).")
+            if not current_is_deep:
+                return (True, True,
+                        f"{why}\n\n"
+                        "Deep with Force OCR reads the page visually and gets clean text.\n\n"
+                        "Switch to Deep with Force OCR?")
+            if not force_ocr_on:
+                return (True, True,
+                        f"{why}\n\n"
+                        "Turning on Force OCR will give much better text.\n\n"
+                        "Enable Force OCR for this conversion?")
+    return None
 
 
 # ---------- Engine loaders (lazy: imported only when a tab is first used) ----------
@@ -140,6 +247,12 @@ class SegmentedControl(tk.Canvas):
                              fill="white" if i == self.sel else SUBFG,
                              font=("", 13, "bold"))
 
+    def set(self, i):
+        """Move the highlight without firing the callback."""
+        if 0 <= i < len(self.segments) and i != self.sel:
+            self.sel = i
+            self._draw()
+
     def _click(self, e):
         n = len(self.segments)
         i = max(0, min(n - 1, int(e.x // (self.w / n))))
@@ -155,7 +268,8 @@ class ConverterPanel(tk.Frame):
     `loader` is a zero-arg callable returning a convert(path)->text function.
     It is called lazily on first use (engines are slow to import)."""
 
-    def __init__(self, master, blurb, loader, load_msg, force_ocr_option=False):
+    def __init__(self, master, blurb, loader, load_msg, force_ocr_option=False,
+                 switch_cb=None):
         super().__init__(master, bg=BG)
         self._loader = loader
         self._load_msg = load_msg
@@ -163,6 +277,7 @@ class ConverterPanel(tk.Frame):
         self._busy = False
         self._q = queue.Queue()
         self._force_ocr_option = force_ocr_option
+        self._switch_cb = switch_cb
 
         tk.Label(self, text=blurb, bg=BG, fg=SUBFG, justify="left",
                  wraplength=580).pack(anchor="w", padx=16, pady=(14, 8))
@@ -261,11 +376,45 @@ class ConverterPanel(tk.Frame):
         paths = filedialog.askopenfilenames(title="Choose documents to convert", filetypes=SUPPORTED)
         if not paths:
             return
+        paths = list(paths)
+
+        # Suggest the better engine/settings for these files before converting.
+        self.status.configure(text="Checking the files…")
+        self.update_idletasks()
+        try:
+            hint = suggest_engine(paths, current_is_deep=self._force_ocr_option,
+                                  force_ocr_on=self.force_ocr.get())
+        except Exception:  # noqa: BLE001 - advice must never block conversion
+            hint = None
+        self.status.configure(text="Ready.")
+
+        if hint:
+            target_deep, want_ocr, msg = hint
+            if messagebox.askyesno("Suggestion", msg, parent=self):
+                self._switch(target_deep, want_ocr, paths)
+                return
+
+        self.start(paths)
+
+    def _switch(self, target_deep, want_ocr, paths):
+        if self._switch_cb:
+            self._switch_cb(target_deep, want_ocr, paths)
+        else:
+            self.start(paths, want_ocr)
+
+    def start(self, paths, force_ocr_override=None):
+        """Begin converting; safe to call from the main thread."""
+        if self._busy:
+            return
+        if force_ocr_override is not None:
+            self.force_ocr.set(force_ocr_override)
         self._set_busy(True)
         self.status.configure(text=f"Converting {len(paths)} file(s)…")
-        threading.Thread(target=self._run, args=(list(paths),), daemon=True).start()
+        # read Tk variables here (main thread) — not from the worker thread
+        opts = (self.include_images.get(), self.force_ocr.get())
+        threading.Thread(target=self._run, args=(paths, opts), daemon=True).start()
 
-    def _run(self, paths):
+    def _run(self, paths, opts):
         try:
             if self._convert is None:
                 self._log(self._load_msg)
@@ -278,15 +427,19 @@ class ConverterPanel(tk.Frame):
             return
 
         self._post("pmode", "determinate", len(paths))
-        include_images = self.include_images.get()
-        force_ocr = self.force_ocr.get()
+        include_images, force_ocr = opts
         ok = 0
         for i, p in enumerate(paths):
             try:
                 text = self._convert(p, include_images, force_ocr)
                 out, chars = write_md(text, p)
-                ok += 1
-                self._log(f"OK   {os.path.basename(p)}  ->  {os.path.basename(out)}  ({chars:,} chars)")
+                if chars == 0:
+                    # Don't claim success on an empty result — say why.
+                    self._log(f"EMPTY {os.path.basename(p)} — no text found. "
+                              f"{'Try the Deep engine (OCR).' if not self._force_ocr_option else 'Try Force OCR.'}")
+                else:
+                    ok += 1
+                    self._log(f"OK   {os.path.basename(p)}  ->  {os.path.basename(out)}  ({chars:,} chars)")
             except Exception as e:  # noqa: BLE001
                 self._log(f"FAIL {os.path.basename(p)}  —  {type(e).__name__}: {e}")
             self._post("pval", i + 1)
@@ -336,6 +489,7 @@ class App(tk.Tk):
             "Best for Word, Excel, PowerPoint and text-based PDFs. Runs instantly.",
             load_quick,
             "Loading Quick engine (MarkItDown)…",
+            switch_cb=self._switch_engine,
         )
         self.deep = ConverterPanel(
             container,
@@ -345,6 +499,7 @@ class App(tk.Tk):
             load_deep,
             "Loading Deep engine (Docling) — offline…",
             force_ocr_option=True,
+            switch_cb=self._switch_engine,
         )
         self.quick.grid(row=0, column=0, sticky="nsew")
         self.deep.grid(row=0, column=0, sticky="nsew")
@@ -352,6 +507,13 @@ class App(tk.Tk):
 
     def _select_mode(self, i):
         (self.quick if i == 0 else self.deep).tkraise()
+
+    def _switch_engine(self, target_deep, want_ocr, paths):
+        """Accepted a suggestion: move to the other engine and convert there."""
+        panel = self.deep if target_deep else self.quick
+        self.seg.set(1 if target_deep else 0)
+        panel.tkraise()
+        panel.start(paths, want_ocr if target_deep else None)
 
     def _init_style(self):
         style = ttk.Style()

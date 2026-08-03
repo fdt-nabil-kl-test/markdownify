@@ -117,7 +117,36 @@ def _looks_garbled(txt):
     return False
 
 
-def suggest_engine(paths, current_is_deep, force_ocr_on):
+def pdf_image_count(path, probe_pages=8):
+    """How many images the first pages of a PDF contain (0 if none/unreadable).
+
+    Used to warn that the Quick engine would silently drop them."""
+    try:
+        from pdfminer.high_level import extract_pages
+        from pdfminer.layout import LTImage, LTFigure
+    except Exception:  # noqa: BLE001
+        return 0
+    n = 0
+
+    def walk(obj):
+        nonlocal n
+        for x in obj:
+            if isinstance(x, LTImage):
+                n += 1
+            elif isinstance(x, LTFigure):
+                walk(x)
+
+    try:
+        for i, page in enumerate(extract_pages(path)):
+            if i >= probe_pages:
+                break
+            walk(page)
+    except Exception:  # noqa: BLE001 - probe is best-effort only
+        return 0
+    return n
+
+
+def suggest_engine(paths, current_is_deep, force_ocr_on, include_images=True):
     """Recommend the better engine/settings for the chosen files.
 
     Returns (target_is_deep, want_force_ocr, message) or None if the current
@@ -154,6 +183,17 @@ def suggest_engine(paths, current_is_deep, force_ocr_on):
                         f"{why}\n\n"
                         "Turning on Force OCR will give much better text.\n\n"
                         "Enable Force OCR for this conversion?")
+
+        # A readable PDF, but Quick cannot carry images out of a PDF at all.
+        if not current_is_deep and include_images:
+            total = sum(pdf_image_count(p) for p in pdfs)
+            if total:
+                return (True, False,
+                        f"This PDF contains {total} image"
+                        f"{'s' if total != 1 else ''} (screenshots, charts, photos).\n\n"
+                        "Quick cannot carry images out of a PDF — they would all be "
+                        "missing from the .md. Deep keeps them.\n\n"
+                        "Switch to Deep to keep the images?")
     return None
 
 
@@ -195,6 +235,10 @@ def load_deep():
     def get_converter(force_ocr):
         if force_ocr not in converters:
             opts = PdfPipelineOptions(generate_picture_images=True)  # so images can be embedded
+            # PDF images are re-rendered from the page; at the default 1.0 scale
+            # (72 dpi) screenshots are too blurry to read. 2.0 doubles the
+            # resolution for no measurable extra time.
+            opts.images_scale = 2.0
             if os.path.isdir(models_dir):
                 opts.artifacts_path = models_dir
             if force_ocr:
@@ -383,7 +427,8 @@ class ConverterPanel(tk.Frame):
         self.update_idletasks()
         try:
             hint = suggest_engine(paths, current_is_deep=self._force_ocr_option,
-                                  force_ocr_on=self.force_ocr.get())
+                                  force_ocr_on=self.force_ocr.get(),
+                                  include_images=self.include_images.get())
         except Exception:  # noqa: BLE001 - advice must never block conversion
             hint = None
         self.status.configure(text="Ready.")

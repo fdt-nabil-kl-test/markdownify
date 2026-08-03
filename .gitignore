@@ -32,3 +32,4 @@ windows-msi/*.cer
 # macOS cruft
 .DS_Store
 **/.DS_Store
+app/slimdist/

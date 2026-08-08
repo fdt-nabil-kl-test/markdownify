@@ -116,3 +116,57 @@ Per the project rollout note, get sign-off from **Thevan (IT Risk)**, **John
 (Compliance)**, and **Martini** before assigning to real users — Markdownify runs
 locally and makes no external calls, but internal software distribution in a
 regulated firm should have that nod on record.
+
+---
+
+# Company Portal listing (app name & description)
+
+Paste these into the Intune app's properties. Written for staff browsing
+Company Portal — deliberately plain-language, no internal jargon.
+
+**Name**
+
+```
+Markdownify
+```
+
+**Description**
+
+```
+Convert documents into clean, plain-text Markdown (.md) files.
+
+Turn Word, Excel, PowerPoint, PDFs and scanned documents into simple text you
+can search, reuse, or feed into AI tools. Pick your files, click convert, and
+the .md file is saved next to the original.
+
+Two modes:
+• Quick — instant. Best for Word, Excel, PowerPoint and normal PDFs.
+• Deep — slower but smarter. Reads scanned pages and photos using OCR, and
+  handles complex tables.
+
+Not sure which to use? The app checks your files and suggests the better option.
+
+Images from your documents are kept inside the .md file, so nothing is lost.
+
+Everything runs on your own computer — no files are uploaded and no internet
+connection is needed.
+```
+
+**Publisher**: `1st Digital Trust`
+
+| Field | Value |
+| --- | --- |
+| Category | Productivity |
+| App version | 1.0.3 |
+| Owner / Developer | Enterprise IT |
+| Information URL | *(internal wiki page, if any)* |
+| Show as featured app | Optional — useful during the pilot |
+
+**Notes (admin-only, not shown to users)**
+
+```
+Internal build. Wraps MarkItDown (Microsoft) + Docling (IBM), both MIT-licensed.
+Windows MSI is signed with the 1FD internal code-signing cert — requires the
+Trusted Certificate profile (see Step 1). Source:
+github.com/fdt-nabil-kl-test/markdownify
+```

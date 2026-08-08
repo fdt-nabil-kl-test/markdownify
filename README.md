@@ -5,8 +5,6 @@ A self-contained sandbox for trying out Microsoft's **MarkItDown**
 (Word, Excel, PowerPoint, PDF, HTML, images, audio) into clean Markdown text,
 mainly so they can be fed to AI/LLM tools or search indexes.
 
-This folder is **separate from the HR-System repo** — nothing here touches it.
-
 ## What's installed
 
 - Python virtual environment in `venv/` (keeps everything isolated from system Python)

@@ -47,7 +47,7 @@ echo "Packaging (this produces a ~2.3 GB app and takes several minutes)..."
 
 # Intune identifies a macOS app by its bundle ID + version — PyInstaller leaves
 # the version at 0.0.0, which would break update detection.
-APP_VERSION="${APP_VERSION:-1.0.3}"
+APP_VERSION="${APP_VERSION:-1.0.4}"
 PLIST="dist/Markdownify.app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"

@@ -225,6 +225,12 @@ def load_deep():
         os.environ.setdefault("HF_HUB_OFFLINE", "1")
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
+    # TorchDynamo (PyTorch's JIT) recurses without bound inside a packaged app
+    # when the layout model runs, failing every PDF with RecursionError. Eager
+    # mode is unaffected, so switch the JIT off before torch is imported.
+    os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+    os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
+
     from docling.document_converter import DocumentConverter, PdfFormatOption
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
@@ -575,6 +581,15 @@ if __name__ == "__main__":
     # Deep engine's libraries re-execute this file; without freeze_support()
     # each one would build another GUI window (and spawn more children).
     multiprocessing.freeze_support()
+
+    # Docling's PDF parser recurses deeply. A packaged app has less usable stack
+    # than a plain Python run, so without these it fails with RecursionError on
+    # documents that convert fine from source.
+    sys.setrecursionlimit(20000)
+    try:
+        threading.stack_size(64 * 1024 * 1024)  # worker threads need room too
+    except (ValueError, RuntimeError):
+        pass
 
     # Headless self-tests (verify the frozen app), no GUI:
     #   --selftest <file>       uses the Quick engine (MarkItDown)

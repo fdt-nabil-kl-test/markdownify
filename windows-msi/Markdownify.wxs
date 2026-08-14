@@ -14,7 +14,7 @@
   <Package
       Name="Markdownify"
       Manufacturer="1st Digital Trust"
-      Version="1.0.0"
+      Version="1.0.4"
       UpgradeCode="{A7F3C2E1-9B4D-4E8A-B6C1-2D5F8E0A3C7B}"
       Scope="perMachine"
       Compressed="yes">

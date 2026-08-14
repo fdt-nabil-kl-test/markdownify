@@ -35,6 +35,7 @@ echo "Packaging (this produces a ~2.3 GB app and takes several minutes)..."
   --windowed \
   --noconfirm \
   --icon markdownify.icns \
+  --osx-bundle-identifier com.1stdigitaltrust.markdownify \
   --add-data "assets:assets" \
   --collect-all markitdown --collect-all magika \
   --collect-all docling --collect-all docling_core --collect-all docling_ibm_models \
@@ -44,8 +45,17 @@ echo "Packaging (this produces a ~2.3 GB app and takes several minutes)..."
   --exclude-module easyocr \
   markitdown_gui.py
 
+# Intune identifies a macOS app by its bundle ID + version — PyInstaller leaves
+# the version at 0.0.0, which would break update detection.
+APP_VERSION="${APP_VERSION:-1.0.3}"
+PLIST="dist/Markdownify.app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_VERSION" "$PLIST" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $APP_VERSION" "$PLIST"
+
 echo
-echo "Built: dist/Markdownify.app"
+echo "Built: dist/Markdownify.app (version $APP_VERSION, id com.1stdigitaltrust.markdownify)"
 echo "To distribute without Gatekeeper warnings, code-sign + notarize:"
 echo "  codesign --deep --force --sign \"Developer ID Application: <NAME>\" \"dist/Markdownify.app\""
 echo "  xcrun notarytool submit ... (see Apple notarization docs)"

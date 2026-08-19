@@ -28,7 +28,7 @@ if errorlevel 1 (
 )
 
 echo [3/4] Building the MSI...
-wix build Markdownify.wxs -o Markdownify.msi
+wix build Markdownify.wxs -arch x64 -o Markdownify.msi
 if errorlevel 1 (echo MSI build failed. & exit /b 1)
 
 echo [4/4] Signing the MSI (free self-signed, for internal use)...

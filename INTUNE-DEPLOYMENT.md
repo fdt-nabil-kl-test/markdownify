@@ -170,3 +170,61 @@ Windows MSI is signed with the 1FD internal code-signing cert — requires the
 Trusted Certificate profile (see Step 1). Source:
 github.com/fdt-nabil-kl-test/markdownify
 ```
+
+---
+
+# Defender ASR block ("Risky action blocked")
+
+**Symptom** — after install, launching the app shows:
+
+```
+Risky action blocked ... Blocked by: Attack surface reduction
+Rule: Block executable files from running unless they meet a prevalence,
+      age, or trusted list criteria
+Affected items: C:\Program Files\Markdownify\Markdownify.exe
+```
+
+**Cause** — this ASR rule blocks executables the world hasn't seen before.
+Markdownify is freshly built in-house, so it has zero global prevalence and no
+age. Every new internal line-of-business app hits this. It is not a sign that
+anything is wrong with the app.
+
+> Note: our internal self-signed certificate does **not** satisfy this rule's
+> "trusted list" criteria. Only a publicly-trusted signing certificate builds
+> reputation, and even then prevalence takes time. An exclusion is the normal,
+> supported fix for internal LOB software.
+
+## Fix A — ASR exclusion (recommended)
+
+1. Intune → **Endpoint security** → **Attack surface reduction** → open the ASR
+   policy that applies to your devices → **Edit**.
+2. Find **"ASR Only Per Rule Exclusions"** (preferred — scopes the exclusion to
+   this one rule) or **"Attack Surface Reduction Only Exclusions"**.
+3. For the rule *Block executable files from running unless they meet a
+   prevalence, age, or trusted list criteria*, add:
+   ```
+   C:\Program Files\Markdownify\Markdownify.exe
+   ```
+   (or the folder `C:\Program Files\Markdownify\`)
+4. Save and let the policy sync to the pilot devices.
+
+## Fix B — allow by file hash (tightest scope)
+
+Microsoft Defender portal (security.microsoft.com) → **Settings** →
+**Endpoints** → **Indicators** → **File hashes** → **Add indicator** → paste the
+SHA-256 of `Markdownify.exe`, action **Allow**.
+
+Get the hash on the Windows PC:
+```
+certutil -hashfile "C:\Program Files\Markdownify\Markdownify.exe" SHA256
+```
+
+Downside: the hash changes with every new build, so the indicator must be
+re-added on each release. Fix A survives updates.
+
+## Note on the install path
+
+The MSI is now built with `-arch x64`, so it installs to
+`C:\Program Files\Markdownify\`. Earlier builds landed in
+`C:\Program Files (x86)\Markdownify\` because the package defaulted to 32-bit —
+if you are excluding a path, check which one the device actually has.

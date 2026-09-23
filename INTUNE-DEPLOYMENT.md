@@ -157,7 +157,7 @@ connection is needed.
 | Field | Value |
 | --- | --- |
 | Category | Productivity |
-| App version | 1.0.4 |
+| App version | 1.0.5 |
 | Owner / Developer | Enterprise IT |
 | Information URL | *(internal wiki page, if any)* |
 | Show as featured app | Optional — useful during the pilot |
@@ -228,3 +228,32 @@ The MSI is now built with `-arch x64`, so it installs to
 `C:\Program Files\Markdownify\`. Earlier builds landed in
 `C:\Program Files (x86)\Markdownify\` because the package defaulted to 32-bit —
 if you are excluding a path, check which one the device actually has.
+
+---
+
+# Engine version policy (why we are not always on latest)
+
+| Engine | Pinned | Why |
+| --- | --- | --- |
+| MarkItDown | **0.1.8** | Tracks latest. Patch releases are low risk and have included fixes to image/data-URI handling — the exact mechanism we use to embed images. |
+| Docling | **2.120.1** | Deliberately held. See below. |
+
+## Docling: held at 2.120.1 (latest is 2.130.0 as of Sep 2026)
+
+Versions 2.121–2.130 contain changes that carry real regression risk for a
+*packaged* build:
+
+- **PDF backend refactored** to drop pypdfium2 (2.128) — our core path.
+- **Threaded docling-parse became the default** (2.123) — threading changes have
+  already bitten us once (the RecursionError that broke every PDF in the frozen
+  app, which did not reproduce from source).
+- **Chart extraction engine refactored** (2.129).
+- Past Docling jumps have **changed the bundled model layout**, breaking offline
+  operation until the models were re-fetched.
+
+There is no fix in that range we currently need. The upgrade is worth doing —
+but as its own change, with a full re-test of the *packaged* app on both
+platforms, not in the middle of a rollout.
+
+**Revisit after the pilot is stable.** Upgrade, re-fetch models, run the
+regression suite, and specifically re-test the frozen app (not just source).

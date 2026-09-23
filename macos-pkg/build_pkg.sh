@@ -17,6 +17,23 @@ if [ ! -d "$APP" ]; then
   (cd ../app && ./build_macos.sh)
 fi
 
+# Intune reads the FIRST bundle declared in the package. PyInstaller nests a
+# Python.framework whose version (e.g. 3.14.6) never changes between our
+# releases, so Intune saw every build as the same version and refused updates
+# ("existing package is [3.14.6], the one you selected has version [3.14.6]").
+# Strip the nested framework declaration so only Markdownify.app is declared.
+echo "Removing nested framework bundle declaration (Intune version detection)..."
+EXP="$(mktemp -d)/expanded"
+pkgutil --expand "Markdownify-$VERSION.pkg" "$EXP"
+python3 - "$EXP/PackageInfo" <<'PYEOF'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+p.write_text(re.sub(r'\s*<bundle[^>]*id="org\.python\.python"[^>]*/>', '', p.read_text()))
+PYEOF
+rm -f "Markdownify-$VERSION.pkg"
+pkgutil --flatten "$EXP" "Markdownify-$VERSION.pkg"
+rm -rf "$(dirname "$EXP")"
+
 rm -rf stage && mkdir -p stage
 cp -R "$APP" stage/
 

@@ -53,6 +53,35 @@ jobs:
           CODESIGN_PFX_PASSWORD: ${{ secrets.CODESIGN_PFX_PASSWORD }}
         run: powershell -ExecutionPolicy Bypass -File sign_windows.ps1 -File Markdownify.msi
 
+      # Report signing status on the run's Summary page so it never has to be
+      # dug out of the logs.
+      - name: Verify the MSI signature
+        if: always()
+        shell: pwsh
+        working-directory: windows-msi
+        env:
+          CODESIGN_PFX_BASE64: ${{ secrets.CODESIGN_PFX_BASE64 }}
+        run: |
+          $msi = "Markdownify.msi"
+          $out = @()
+          if (-not (Test-Path $msi)) {
+            $out += "## MSI NOT PRODUCED - the WiX build step failed"
+          } else {
+            $sig = Get-AuthenticodeSignature $msi
+            $signer = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { "(none)" }
+            $secret = if ($env:CODESIGN_PFX_BASE64) { "present" } else { "MISSING - add the repo secret" }
+            if ($sig.SignerCertificate) { $out += "## MSI IS SIGNED" } else { $out += "## MSI IS NOT SIGNED" }
+            $out += ""
+            $out += "| field | value |"
+            $out += "| --- | --- |"
+            $out += "| Signature status | $($sig.Status) |"
+            $out += "| Signer | $signer |"
+            $out += "| Signing secret | $secret |"
+            $out += "| MSI size | $([math]::Round((Get-Item $msi).Length/1MB)) MB |"
+          }
+          $out | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $out | Write-Host
+
       # Fallback: a runnable zip of the app folder, always produced, so the team
       # can test even if the MSI step needs a fix on the first run.
       - name: Zip the runnable app folder

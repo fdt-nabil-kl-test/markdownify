@@ -17,6 +17,16 @@ if [ ! -d "$APP" ]; then
   (cd ../app && ./build_macos.sh)
 fi
 
+rm -rf stage && mkdir -p stage
+cp -R "$APP" stage/
+
+pkgbuild \
+  --root stage \
+  --identifier "$IDENTIFIER" \
+  --version "$VERSION" \
+  --install-location /Applications \
+  "Markdownify-$VERSION.pkg"
+
 # Intune reads the FIRST bundle declared in the package. PyInstaller nests a
 # Python.framework whose version (e.g. 3.14.6) never changes between our
 # releases, so Intune saw every build as the same version and refused updates
@@ -33,16 +43,6 @@ PYEOF
 rm -f "Markdownify-$VERSION.pkg"
 pkgutil --flatten "$EXP" "Markdownify-$VERSION.pkg"
 rm -rf "$(dirname "$EXP")"
-
-rm -rf stage && mkdir -p stage
-cp -R "$APP" stage/
-
-pkgbuild \
-  --root stage \
-  --identifier "$IDENTIFIER" \
-  --version "$VERSION" \
-  --install-location /Applications \
-  "Markdownify-$VERSION.pkg"
 
 rm -rf stage
 echo

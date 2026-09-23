@@ -22,3 +22,31 @@ else:
         with_picture_classifier=False,
     )
     print(f"Downloaded Docling models -> {OUT}")
+    prune_duplicate_formats(OUT)
+
+
+def prune_duplicate_formats(out):
+    """Docling ships some models in two interchangeable formats and only loads
+    one of them. Dropping the unused copy saves ~194 MB in every installer.
+
+    Defensive: each duplicate is only removed when the format we actually use is
+    present, so a future Docling that switches formats won't be broken."""
+    import shutil
+    freed = 0
+
+    # Layout model: the pipeline uses the PyTorch build, not the ONNX one.
+    torch_layout = out / "docling-project--docling-layout-heron"
+    onnx_layout = out / "docling-project--docling-layout-heron-onnx"
+    if torch_layout.is_dir() and onnx_layout.is_dir():
+        freed += sum(f.stat().st_size for f in onnx_layout.rglob("*") if f.is_file())
+        shutil.rmtree(onnx_layout)
+
+    # RapidOCR loads the .onnx weights; the .pth copies are never opened.
+    ocr = out / "RapidOcr"
+    if ocr.is_dir() and any(ocr.glob("*.onnx")):
+        for pth in ocr.glob("*.pth"):
+            freed += pth.stat().st_size
+            pth.unlink()
+
+    if freed:
+        print(f"Pruned {freed // (1024*1024)} MB of duplicate model formats")

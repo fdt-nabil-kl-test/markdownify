@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="1.0.0"
+VERSION="1.0.6"
 IDENTIFIER="com.1stdigitaltrust.markdownify"
 APP="../app/dist/Markdownify.app"
 

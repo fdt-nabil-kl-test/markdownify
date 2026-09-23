@@ -157,7 +157,7 @@ connection is needed.
 | Field | Value |
 | --- | --- |
 | Category | Productivity |
-| App version | 1.0.5 |
+| App version | 1.0.6 |
 | Owner / Developer | Enterprise IT |
 | Information URL | *(internal wiki page, if any)* |
 | Show as featured app | Optional — useful during the pilot |
